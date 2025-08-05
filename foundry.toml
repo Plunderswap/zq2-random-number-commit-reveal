@@ -1,0 +1,11 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+evm_version = 'shanghai' # shanghai should be used when zq2 supports prevrandao (currently returns 0 on shanghai)
+solc_version = "0.8.26"
+optimizer = false
+via_ir = true
+gas_limit = 10000000000
+ffi = true
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
