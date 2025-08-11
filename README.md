@@ -41,6 +41,18 @@ For commercial use, including but not limited to:
 
 **Contact us for commercial licensing**: [info@plunderswap.com](mailto:info@plunderswap.com)
 
+### Official Contract Deployments - Unrestricted Use
+
+The following officially deployed contracts on Zilliqa networks are available for **unrestricted use without any licensing restrictions**:
+
+#### Zilliqa Testnet
+- **ZilliqaRandomNumber2**: `0xEaB8Eae730c57b791ca1Dd2Fc5f23dEe2Cd571D0`
+
+#### Zilliqa Mainnet  
+- **ZilliqaRandomNumber2**: `0x880528Fa6706796f017EB0f7BA8eA0Dc724Cf7C0`
+
+**These specific contract deployments may be used freely for any purpose**, including commercial applications, without requiring attribution or commercial licensing. This exception applies only to interactions with these officially deployed contract instances.
+
 ### Full License
 
 - **License Text**: See [LICENSE](./LICENSE) file in this repository
@@ -141,13 +153,13 @@ Random number 1 returns the full unconstrained random number, while random numbe
 ```bash
 export RPC_URL=https://api.testnet.zilliqa.com
 export PRIVATE_KEY=0x...
-forge script script/DeployZillIqaRandomNumber1.s.sol --rpc-url $RPC_URL --broadcast --legacy
+forge script script/DeployZilliqaRandomNumber1.s.sol --rpc-url $RPC_URL --broadcast --legacy
 ```
 
 or
 
 ```bash
-forge script script/DeployZillIqaRandomNumber2.s.sol --rpc-url $RPC_URL --broadcast --legacy
+forge script script/DeployZilliqaRandomNumber2.s.sol --rpc-url $RPC_URL --broadcast --legacy
 ```
 
 ### InteractWithRandomNumber.s.sol Features
@@ -291,7 +303,7 @@ forge test -vv
 
 ```bash
 forge verify-contract 0xfBF9D9E376859bF6fd4A3e3cb4241962f5Aebc47 \
-  src/ZillIqaRandomNumber1.sol:ZillIqaRandomNumber1 \
+  src/ZilliqaRandomNumber2.sol:ZilliqaRandomNumber2 \
   --chain-id 32770 \
   --verifier sourcify
 ```
