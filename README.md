@@ -1,146 +1,96 @@
-# ZQ2 Random Number Generator (Commit/Reveal VRF)
+# ZQ2 Random Number Generator (Commit/Reveal)
 
 Designed by PlunderSwap
 
-This was a simple project to learn about random number generation using commitments and reveals, and pre-randomized randao from a future block.
+A simple, verifiable on-chain random number generator using a commit-reveal pattern anchored to a future block's hash.
 
-These 2 things together allow for a simple random number generator that is verifiable and secure.
-
-The commit-reveal pattern remains the most secure on-chain solution.
-
-## License
-
-This project is licensed under **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**.
-
-### License Summary
-
-✅ **Free for Non-Commercial Use**: You are free to use, modify, and share this code for non-commercial purposes  
-✅ **Attribution Required**: You must give appropriate credit to the original author  
-✅ **Modifications Allowed**: You can adapt and build upon this code  
-❌ **Commercial Use Restricted**: Commercial use requires a separate license  
-
-### What This Means
-
-- **Educational Use**: ✅ Free to use for learning and educational projects
-- **Research Projects**: ✅ Free to use for academic and research purposes  
-- **Open Source Projects**: ✅ Free to use in non-commercial open source projects
-- **Personal Projects**: ✅ Free to use for personal, non-profit projects
-- **Commercial Applications**: ❌ Requires commercial license (contact us)
-- **Production DApps**: ❌ Requires commercial license if monetized
-- **Trading/Gaming Platforms**: ❌ Requires commercial license
-
-### Commercial Licensing
-
-For commercial use, including but not limited to:
-
-- Production DApps and platforms
-- Commercial gaming applications  
-- Trading platforms and exchanges
-- Revenue-generating applications
-- Enterprise deployments
-
-**Contact us for commercial licensing**: [info@plunderswap.com](mailto:info@plunderswap.com)
-
-### Official Contract Deployments - Unrestricted Use
-
-The following officially deployed contracts on Zilliqa networks are available for **unrestricted use without any licensing restrictions**:
-
-#### Zilliqa Testnet
-- **ZilliqaRandomNumber2**: `0xEaB8Eae730c57b791ca1Dd2Fc5f23dEe2Cd571D0`
-
-#### Zilliqa Mainnet  
-- **ZilliqaRandomNumber2**: `0x880528Fa6706796f017EB0f7BA8eA0Dc724Cf7C0`
-
-**These specific contract deployments may be used freely for any purpose**, including commercial applications, without requiring attribution or commercial licensing. This exception applies only to interactions with these officially deployed contract instances.
-
-### Full License
-
-- **License Text**: See [LICENSE](./LICENSE) file in this repository
-- **Official License**: [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)
-
-### Attribution
-
-When using this code, please include attribution:
-
-Based on ZQ2 Random Number Generator by PlunderSwap
-Original: https://github.com/Plunderswap/zq2-random-number-commit-reveal
-Licensed under CC BY-NC 4.0
+A commitment pins a target block a few blocks in the future. Once that block has been produced, its hash is used as the entropy source for the reveal. Because the target block's hash is fixed the moment the block is mined, the result is fully determined before anyone reveals — so the party revealing cannot influence the outcome by choosing when to submit their transaction.
 
 ## Contract Features
 
 ### ZilliqaRandomNumber1 Contract
 
-This contract returns the full unconstrained random number for applications that need the raw entropy value.
+Returns the full unconstrained random number for applications that need the raw 256-bit entropy value.
 
 ### ZilliqaRandomNumber2 Contract (Recommended)
 
-The enhanced contract implements a secure random number generation system using a commit-reveal pattern combined with block-based randomness. This prevents miners/validators from knowing the outcome before including the transaction, and prevents users from selectively submitting transactions based on outcomes.
+Returns a random number constrained to a user-specified range. It implements the same commit-reveal pattern anchored to a future block's hash, then maps the raw value into the requested `[minRandom, maxRandom]` range.
 
 #### Commitment System
 
-- Users submit a commitment for their desired random number range
-- Commitments must target a future block (minimum 5 blocks ahead, maximum 100 blocks)
+- Users submit a commitment specifying a target block (and, for RNG2, their desired range)
+- Commitments must target a future block (minimum 5 blocks ahead, maximum 1000 blocks)
 - Each address can only have one active commitment at a time
-- **Range Selection**: Users specify `minRandom` and `maxRandom` values at commit time for maximum fairness
+- **Range Selection (RNG2)**: Users specify `minRandom` and `maxRandom` at commit time, before any entropy exists
 - Maximum allowed range: up to 2 billion (2,000,000,000)
 
 #### Security Measures
 
-- MIN_BLOCKS_DELAY (5 blocks): Ensures sufficient time between commit and reveal
-- MAX_BLOCKS_DELAY (1000 blocks): Prevents commitments too far in the future
-- Commitment verification: Validates that the user has an active commitment for the target block
-- Range validation: Ensures valid min/max values and enforces maximum limit
-- **Fair Range Commitment**: Users must commit to their desired range upfront, preventing manipulation
-- **Manipulation-resistant entropy**: Uses previous block hash instead of timestamp to prevent validator manipulation
+- **MIN_BLOCKS_DELAY (5 blocks)**: The target block is far enough ahead that its hash is unknown at commit time
+- **MAX_BLOCKS_DELAY (1000 blocks)**: Prevents commitments too far in the future
+- **REVEAL_WINDOW (256 blocks)**: The target block's hash is only readable on-chain for 256 blocks after it is produced. Reveals must happen within this window; a reveal attempted after the window has closed reverts cleanly rather than falling back to any other entropy source
+- **Outcome fixed at the target block**: The result depends only on the target block's hash and the caller's address. Revealing in any block within the window yields the same value, so the reveal cannot be resubmitted or delayed to shop for a different outcome
+- **Range validation (RNG2)**: Enforces `0 < minRandom <= maxRandom <= MAX_RANDOM_LIMIT` and locks the range in at commit time
 
 #### Random Number Generation
 
-The final random number combines three carefully selected entropy sources for optimal security and efficiency:
+The random number is derived from two sources via keccak256:
 
-- **User wallet address** (user-specific entropy, ensures different users get different results)
-- **Block's PREVRANDAO value** (block randomness - confirmed working well on ZQ2!)
-- **Previous block hash** (cryptographic entropy from recent block, manipulation-resistant)
+- **Target block hash** (`blockhash(targetBlock)`) — the entropy source, fixed once the target block is produced and unknown at commit time
+- **User wallet address** — ensures different users deriving from the same target block get different results
 
-This streamlined approach provides excellent randomness while being gas-efficient and simple to verify. The PREVRANDAO on ZQ2 provides strong entropy (non-zero values), the previous block hash adds additional unpredictable entropy that cannot be manipulated by validators, and the user's wallet address ensures different users get different random numbers even with identical block conditions.
+```solidity
+uint256 randomNumber = uint256(
+    keccak256(
+        abi.encodePacked(
+            msg.sender,
+            blockhash(targetBlock)
+        )
+    )
+);
+```
 
-The randomness is then constrained to the user's specified range using a mathematically fair modulo operation that ensures uniform distribution across all possible values.
+For RNG2, the raw value is then mapped into the committed range using a modulo operation.
 
-All entropy sources and the final constrained random number are returned in the `RandomnessRevealed` event for complete transparency and verification.
+All entropy sources and the resulting value(s) are emitted in the `RandomnessRevealed` event for transparency and independent verification.
+
+#### Trust Assumptions
+
+The entropy for a given commitment comes from the hash of a single future block. Whoever produces that block has limited influence over it — they can choose to produce the block or not — which is the residual trust assumption of any single-block-hash scheme. On ZQ2's BFT consensus this is expensive and impractical for an individual user to exploit, making the generator well suited to games, lotteries, raffles, and fair selection. Applications securing very large value against a well-resourced adversary who may also be a block producer should use a dedicated verifiable randomness beacon.
 
 #### Randomness Fairness Analysis
 
-The contract uses a cryptographically secure approach to ensure fair distribution:
+The range mapping (RNG2) uses a cryptographically secure approach to ensure fair distribution:
 
-1. **Entropy Sources**: Combines user wallet address, block.prevrandao, and previous block hash via keccak256
-2. **Uniform Distribution**: Uses modulo operation `(randomNumber % range) + minRandom` 
-3. **No Bias**: The modulo operation provides uniform distribution when the input space (2^256) is much larger than the output range (max 2 billion)
-4. **Bias Analysis**: With a 2^256 input space and maximum 2×10^9 output range, the bias is negligible (~2^-27, or less than 1 in 134 million)
+1. **Entropy Source**: keccak256 over the target block hash and user address produces uniformly distributed output
+2. **Uniform Distribution**: Uses modulo mapping `(randomNumber % range) + minRandom`
+3. **No Bias**: The modulo operation provides effectively uniform distribution when the input space (2^256) is vastly larger than the output range (max 2 billion)
+4. **Bias Analysis**: With a 2^256 input space and a maximum 2×10^9 output range, the modulo bias is negligible
 
 #### Events
 
-The contract emits two main events:
+The contracts emit two events:
 
-- `CommitSubmitted`: When a user submits a new commitment, including the target block and random number range
-- `RandomnessRevealed`: When randomness is successfully generated, including:
+- `CommitSubmitted`: When a user submits a commitment, including the target block (and range for RNG2)
+- `RandomnessRevealed`: When randomness is generated, including:
   - The raw random number (full entropy)
-  - The constrained random number (within specified range, RNG2 only)
-
-  - The block's PREVRANDAO value
-  - The previous block hash
+  - The constrained random number (RNG2 only)
+  - The target block number
+  - The target block hash used as the entropy source
   - The min/max range used (RNG2 only)
 
 #### Usage Flow
 
-1. User decides on their desired random number range (min and max)
-2. User commits to the range and target block (commit phase)
-3. Wait for the target block to be reached
-4. User reveals to generate the random number within their specified range (reveal phase)
+1. (RNG2) Decide on the desired random number range (min and max)
+2. Commit to the target block (and range) — the commit phase
+3. Wait for the target block to be produced
+4. Reveal within 256 blocks of the target block to generate the random number
 
 ## Prerequisites
 
 If you are using Windows, you will need to install WSL (Windows Subsystem for Linux) and then install Foundry.
 
-To deploy and interact with the contracts throught the CLI, use the Forge scripts provided in this repository and described further below. First, install Foundry (<https://book.getfoundry.sh/getting-started/installation>) before proceeding with the deployment:
+To deploy and interact with the contracts through the CLI, use the Forge scripts provided in this repository and described below. First, install Foundry (<https://book.getfoundry.sh/getting-started/installation>) before proceeding with the deployment:
 
 ```bash
 forge install foundry-rs/forge-std --no-commit
@@ -151,7 +101,7 @@ forge install foundry-rs/forge-std --no-commit
 Random number 1 returns the full unconstrained random number, while random number 2 returns a random number within a user-specified range (1 to 2 billion maximum).
 
 ```bash
-export RPC_URL=https://api.testnet.zilliqa.com
+export RPC_URL=https://api.zilliqa.com
 export PRIVATE_KEY=0x...
 forge script script/DeployZilliqaRandomNumber1.s.sol --rpc-url $RPC_URL --broadcast --legacy
 ```
@@ -205,7 +155,7 @@ For ZilliqaRandomNumber2, the commit command will show:
 
 ```bash
 === Input Values ===
-  Contract: 0x5581B9908e57f52A668400a22C9Bc4E51299A950
+  Contract: <contract_address>
   Action: commit
   Contract Type: RNG2
   Min Random: 1
@@ -220,7 +170,7 @@ For ZilliqaRandomNumber2, the commit command will show:
 
 ### Reveal
 
-This will reveal the random number and emit the RandomnessRevealed event. 
+This will reveal the random number and emit the RandomnessRevealed event. It must be called after the target block is produced and within 256 blocks of it.
 
 ```bash
 export ACTION=reveal
@@ -231,19 +181,19 @@ Will return (example for ZilliqaRandomNumber2):
 
 ```bash
 === Input Values ===
-  Contract: 0x5581B9908e57f52A668400a22C9Bc4E51299A950
+  Contract: <contract_address>
   Action: reveal
   Contract Type: RNG2
   Min Random: 1
   Max Random: 100000
 
 === RNG2 Reveal ===
-  Contract: 0x5581B9908e57f52A668400a22C9Bc4E51299A950
+  Contract: <contract_address>
 
 === RNG2 Reveal Completed ===
 ```
 
-### Cancel (need to wait for MAX_BLOCKS_DELAY blocks)
+### Cancel (after the reveal window has closed)
 
 ```bash
 export ACTION=cancel
@@ -274,26 +224,16 @@ export RPC_URL=https://api.testnet.zilliqa.com  # Optional, defaults to testnet
 forge script script/DecodeRandomReveal.s.sol --sig "decodeFromTxHash()" --ffi
 ```
 
-**New Features:**
-
-- **✅ Full Verification**: Automatically verifies both raw and constrained random numbers
-- **🔍 Detailed Analysis**: Shows step-by-step calculation verification
-- **⚠️ Error Detection**: Identifies mismatches and suggests causes
-- **📊 Enhanced Reporting**: Clear pass/fail indicators with explanations
-
 This script will:
 
 - Fetch the transaction receipt automatically
 - Decode all entropy sources used
 - **Verify the random number calculation using your wallet address**
 - **Confirm both raw and constrained random numbers match expected values**
-- Analyze entropy quality
 - Show range analysis for RNG2
 - Provide clear verification status with helpful error messages
 
 ## Testing
-
-To test the contracts, use the Forge scripts provided in this repository and described further below.
 
 ```bash
 forge test -vv
@@ -302,7 +242,7 @@ forge test -vv
 ## Verifying the contracts using sourcify (As an example)
 
 ```bash
-forge verify-contract 0xfBF9D9E376859bF6fd4A3e3cb4241962f5Aebc47 \
+forge verify-contract <contract_address> \
   src/ZilliqaRandomNumber2.sol:ZilliqaRandomNumber2 \
   --chain-id 32770 \
   --verifier sourcify
@@ -310,32 +250,25 @@ forge verify-contract 0xfBF9D9E376859bF6fd4A3e3cb4241962f5Aebc47 \
 
 ## Randomness Fairness Analysis (Detailed)
 
-### Mathematical Proof of Fairness
-
-The ZilliqaRandomNumber2 contract uses a mathematically sound approach to ensure fair random number generation:
-
-#### 1. Entropy Generation
+### Entropy Generation
 
 ```solidity
 uint256 randomNumber = uint256(
     keccak256(
         abi.encodePacked(
             msg.sender,
-            block.prevrandao,
-            blockhash(block.number - 1)
+            blockhash(targetBlock)
         )
     )
 );
 ```
 
-- **Cryptographic Hash**: Uses keccak256, which produces uniformly distributed outputs
-- **Optimized Entropy Sources**: Combines three high-quality entropy sources
-- **User-Specific**: Different users get different results even with identical blocks
-- **ZQ2 Optimized**: Takes advantage of working PREVRANDAO on ZQ2
-- **Manipulation Resistant**: Uses previous block hash instead of timestamp
+- **Cryptographic Hash**: keccak256 produces uniformly distributed output
+- **Fixed at the target block**: `blockhash(targetBlock)` is set the moment the target block is produced and cannot be influenced by the timing of the reveal
+- **User-Specific**: Different users deriving from the same target block get different results
 - **Output Space**: Produces values in range [0, 2^256 - 1]
 
-#### 2. Range Mapping
+### Range Mapping (RNG2)
 
 ```solidity
 function generateRandomNumber(uint256 randomNumber, uint256 minRandom, uint256 maxRandom) internal pure returns (uint256) {
@@ -344,11 +277,11 @@ function generateRandomNumber(uint256 randomNumber, uint256 minRandom, uint256 m
 }
 ```
 
-#### 3. Bias Analysis
+### Bias Analysis
 
-**Modulo Bias**: When using modulo operation, bias occurs when the input space is not perfectly divisible by the output range.
+**Modulo Bias**: When using a modulo operation, bias occurs when the input space is not perfectly divisible by the output range.
 
-For our implementation:
+For this implementation:
 
 - **Input Space**: 2^256 ≈ 1.16 × 10^77
 - **Maximum Output Range**: 2 × 10^9 (2 billion)
@@ -356,76 +289,42 @@ For our implementation:
 
 **Bias Analysis for Different Range Sizes**:
 
-| Range Size | Example Range | Bias (Approximate) | Orders of Magnitude Better than Lottery* |
-|------------|---------------|-------------------|------------------------------------------|
-| 10 | 1-10 | 8.64 × 10^-77 | 69 orders of magnitude |
-| 100 | 1-100 | 8.64 × 10^-76 | 68 orders of magnitude |
-| 1,000 | 1-1000 | 8.64 × 10^-75 | 67 orders of magnitude |
-| 10,000 | 1-10000 | 8.64 × 10^-74 | 66 orders of magnitude |
-| 2 billion | 1-2000000000 | 1.73 × 10^-68 | 60 orders of magnitude |
-
-*Lottery probability ≈ 1 in 10^8
+| Range Size | Example Range | Bias (Approximate) |
+|------------|---------------|-------------------|
+| 10 | 1-10 | 8.64 × 10^-77 |
+| 100 | 1-100 | 8.64 × 10^-76 |
+| 1,000 | 1-1000 | 8.64 × 10^-75 |
+| 10,000 | 1-10000 | 8.64 × 10^-74 |
+| 2 billion | 1-2000000000 | 1.73 × 10^-68 |
 
 **Mathematical Formula**:
 
 - Let q = floor(2^256 / range)
 - Values 0 to (2^256 mod range - 1) appear (q+1) times each
-- Remaining values appear q times each  
+- Remaining values appear q times each
 - Maximum bias ≈ 1/q
 
-**Practical Impact**:
+**Practical Impact**: Even for the largest allowed range (2 billion), the modulo bias is negligible; for smaller ranges it is smaller still. It is statistically irrelevant for any practical application.
 
-- Even for the largest allowed range (2 billion), bias is negligible (1 in 10^68)
-- For smaller ranges, bias becomes even more negligible
-- All biases are statistically irrelevant for any practical application
-- Our bias is 60-69 orders of magnitude smaller than winning the lottery
-
-#### 4. Security Properties
+### Security Properties
 
 **Unpredictability**:
 
-- Users cannot predict the outcome due to unknown future block properties
-- Validators cannot manipulate PREVRANDAO without significant cost
-- PREVRANDAO on ZQ2 provides excellent entropy (confirmed non-zero)
-- Previous block hash cannot be manipulated by validators (already finalized)
-- User wallet address ensures user-specific entropy and prevents identical results
+- The outcome depends on the target block's hash, which does not exist at commit time
+- The user's wallet address ensures user-specific results even from the same target block
 
 **Fairness**:
 
 - All values in the specified range have equal probability (within negligible bias)
-- No value is favored over others
-- Range commitment prevents post-hoc manipulation
+- The range is committed upfront and cannot be changed after entropy is known
+- The result is fixed at the target block, so the reveal transaction cannot be timed or resubmitted to change it
 
 **Verifiability**:
 
 - All entropy sources are published in events
-- Anyone can verify the calculation
+- Anyone can recompute and verify the result
 - Transparent and auditable process
-
-#### 5. Comparison with Alternatives
-
-**Better than**:
-
-- Single entropy source solutions
-- Block hash only (manipulatable by miners)
-- Simple timestamp (predictable and manipulatable)
-- Linear congruential generators (not cryptographically secure)
-- Solutions without commit-reveal protection
-- Complex multi-source systems with diminishing returns
-- Timestamp-based solutions (vulnerable to validator manipulation)
-
-**Equivalent to**:
-
-- Chainlink VRF (but more cost-effective and faster)
-- Other commit-reveal schemes with cryptographic randomness
-
-**Trade-offs**:
-
-- Requires two transactions (commit + reveal)
-- Short delay between commitment and revelation
-- Simpler than complex multi-source schemes (better gas efficiency)
-- Uses finalized block data (no manipulation possible)
 
 ### Conclusion
 
-The ZilliqaRandomNumber2 contract provides cryptographically secure, mathematically fair random number generation with negligible bias. The combination of commit-reveal pattern and three optimized entropy sources (including manipulation-resistant previous block hash) makes it suitable for applications requiring high-quality randomness, including gaming, lotteries, and fair selection processes. The streamlined approach provides excellent security while being gas-efficient and easy to verify.
+The contracts provide verifiable, fair random number generation with negligible bias. Anchoring the entropy to a committed future block's hash keeps the outcome unknown at commit time and immutable at reveal time, making them well suited to gaming, lotteries, and fair selection processes while remaining gas-efficient and easy to verify.

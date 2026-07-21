@@ -35,7 +35,7 @@ contract InteractWithRandomNumber is Script {
         console2.log("");
         console2.log("The RandomnessRevealed event contains:");
         console2.log("- randomNumber (full 256-bit entropy)");
-        console2.log("- prevrandao, blockhash");
+        console2.log("- targetBlock, targetBlockHash");
     }
 
     function commitToRNG2(address contractAddress, uint256 minRandom, uint256 maxRandom) public {
@@ -68,7 +68,7 @@ contract InteractWithRandomNumber is Script {
         console2.log("The RandomnessRevealed event contains:");
         console2.log("- randomNumber (full 256-bit entropy)");
         console2.log("- constrainedRandomNumber (within your range)");
-        console2.log("- prevrandao, blockhash");
+        console2.log("- targetBlock, targetBlockHash");
         console2.log("- minRandom, maxRandom");
     }
 
